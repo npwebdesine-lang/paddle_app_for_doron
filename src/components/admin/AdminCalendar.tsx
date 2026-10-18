@@ -1,7 +1,7 @@
-import { format, isToday, isTomorrow } from 'date-fns'
+import { format } from 'date-fns'
 import { AlertTriangle, CalendarDays, Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { attendingCount, cn, inputClass, MIN_PLAYERS, practiceEnd } from '../../lib/utils'
+import { attendingCount, cn, dayLabel, inputClass, MIN_PLAYERS, practiceEnd } from '../../lib/utils'
 import type { Profile, PracticeWithDetails, Team } from '../../types/database.types'
 import PracticeCard from '../PracticeCard'
 import PracticeForm from './PracticeForm'
@@ -14,11 +14,7 @@ type Props = {
   onChanged: () => void
 }
 
-function dayLabel(date: Date) {
-  if (isToday(date)) return 'Today'
-  if (isTomorrow(date)) return 'Tomorrow'
-  return format(date, 'EEEE, d MMMM yyyy')
-}
+const WHEN_LABELS = { upcoming: 'קרובים', past: 'שהסתיימו' } as const
 
 export default function AdminCalendar({ practices, teams, profile, now, onChanged }: Props) {
   const [when, setWhen] = useState<'upcoming' | 'past'>('upcoming')
@@ -57,16 +53,16 @@ export default function AdminCalendar({ practices, teams, profile, now, onChange
               key={w}
               onClick={() => setWhen(w)}
               className={cn(
-                'rounded-md px-3 py-1.5 font-medium capitalize transition',
+                'rounded-md px-3 py-1.5 font-medium transition',
                 when === w ? 'bg-white shadow-sm' : 'text-slate-500 hover:text-slate-700',
               )}
             >
-              {w}
+              {WHEN_LABELS[w]}
             </button>
           ))}
         </div>
         <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} className={cn(inputClass, 'w-auto')}>
-          <option value="">All teams</option>
+          <option value="">כל הקבוצות</option>
           {teams.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name}
@@ -76,35 +72,35 @@ export default function AdminCalendar({ practices, teams, profile, now, onChange
         {lowCount > 0 && (
           <span className="flex items-center gap-1 rounded-full bg-orange-100 px-2.5 py-1 text-xs font-medium text-orange-800">
             <AlertTriangle className="h-3.5 w-3.5" />
-            {lowCount} upcoming below {MIN_PLAYERS} players
+            {lowCount} אימונים קרובים עם פחות מ-{MIN_PLAYERS} שחקנים
           </span>
         )}
         <button
           onClick={() => setAdding(true)}
           disabled={teams.length === 0}
-          className="ml-auto flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+          className="ms-auto flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
         >
           <Plus className="h-4 w-4" />
-          Add practice
+          הוספת אימון
         </button>
       </div>
 
       {teams.length === 0 && (
         <p className="mb-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
-          Create teams first (Teams & Users tab), then add practices.
+          קודם צרו קבוצות (בלשונית "קבוצות ומשתמשים"), ואז הוסיפו אימונים.
         </p>
       )}
 
       {grouped.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-slate-300 py-16 text-slate-500">
           <CalendarDays className="h-8 w-8" />
-          <p className="text-sm">No {when} practices</p>
+          <p className="text-sm">אין אימונים {WHEN_LABELS[when]}</p>
         </div>
       ) : (
         <div className="space-y-8">
           {grouped.map((g) => (
             <div key={g.date.toISOString()}>
-              <h3 className="mb-3 text-sm font-semibold tracking-wide text-slate-500 uppercase">{dayLabel(g.date)}</h3>
+              <h3 className="mb-3 text-sm font-semibold text-slate-500">{dayLabel(g.date)}</h3>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {g.items.map((p) => (
                   <PracticeCard key={p.id} practice={p} profile={profile} now={now} onChanged={onChanged} onEdit={setEditing} />

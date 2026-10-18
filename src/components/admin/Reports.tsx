@@ -1,7 +1,16 @@
-import { format, subDays } from 'date-fns'
+import { subDays } from 'date-fns'
 import { AlertTriangle, Download } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { attendingCount, cn, LEVEL_LABELS, LEVEL_STYLES, MIN_PLAYERS, practiceEnd } from '../../lib/utils'
+import {
+  attendingCount,
+  cn,
+  errorMessage,
+  formatHe,
+  LEVEL_LABELS,
+  LEVEL_STYLES,
+  MIN_PLAYERS,
+  practiceEnd,
+} from '../../lib/utils'
 import type { PracticeWithDetails, Team } from '../../types/database.types'
 
 type Props = {
@@ -11,9 +20,9 @@ type Props = {
 }
 
 const PERIODS = [
-  { days: 7, label: 'Last 7 days' },
-  { days: 30, label: 'Last 30 days' },
-  { days: 90, label: 'Last 90 days' },
+  { days: 7, label: '7 הימים האחרונים' },
+  { days: 30, label: '30 הימים האחרונים' },
+  { days: 90, label: '90 הימים האחרונים' },
 ]
 
 type TeamRow = {
@@ -39,19 +48,19 @@ function Stat({ label, value, hint }: { label: string; value: string | number; h
   )
 }
 
-function downloadCsv(rows: TeamRow[], label: string) {
+function downloadCsv(rows: TeamRow[], days: number) {
   const header = [
-    'Team',
-    'Level',
-    'Practices held',
-    'Cancelled',
-    'Avg attendance',
-    `Below ${MIN_PLAYERS} players`,
-    'Coach: yes',
-    'Coach: no',
-    'Coach: not reported',
-    'Absences',
-    'Substitutes',
+    'קבוצה',
+    'רמה',
+    'אימונים שהתקיימו',
+    'בוטלו',
+    'ממוצע נוכחות',
+    `מתחת ל-${MIN_PLAYERS} שחקנים`,
+    'מאמן: כן',
+    'מאמן: לא',
+    'מאמן: לא דווח',
+    'היעדרויות',
+    'מחליפים',
   ]
   const lines = rows.map((r) =>
     [
@@ -70,18 +79,19 @@ function downloadCsv(rows: TeamRow[], label: string) {
       .map((v) => `"${String(v).replace(/"/g, '""')}"`)
       .join(','),
   )
-  const blob = new Blob([[header.join(','), ...lines].join('\n')], { type: 'text/csv' })
+  // BOM so Excel opens the Hebrew text as UTF-8.
+  const blob = new Blob(['﻿' + [header.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `padel-league-report-${label.toLowerCase().replace(/\s+/g, '-')}.csv`
+  a.download = `padel-league-report-${days}d.csv`
   a.click()
   URL.revokeObjectURL(url)
 }
 
 export default function Reports({ practices, teams, now }: Props) {
   const [days, setDays] = useState(30)
-  const period = PERIODS.find((p) => p.days === days)!
+  const [exportError, setExportError] = useState<string | null>(null)
 
   const { rows, totals, upcomingLow } = useMemo(() => {
     const since = subDays(now, days)
@@ -126,6 +136,15 @@ export default function Reports({ practices, teams, now }: Props) {
     return { rows, totals, upcomingLow }
   }, [practices, teams, now, days])
 
+  function handleExport() {
+    setExportError(null)
+    try {
+      downloadCsv(rows, days)
+    } catch (err) {
+      setExportError(errorMessage(err))
+    }
+  }
+
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-center gap-3">
@@ -144,59 +163,61 @@ export default function Reports({ practices, teams, now }: Props) {
           ))}
         </div>
         <button
-          onClick={() => downloadCsv(rows, period.label)}
-          className="ml-auto flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          onClick={handleExport}
+          className="ms-auto flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
         >
           <Download className="h-4 w-4" />
-          Export CSV
+          ייצוא ל-CSV
         </button>
       </div>
 
+      {exportError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{exportError}</p>}
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Practices held" value={totals.held} hint={`${totals.cancelled} cancelled`} />
-        <Stat label="Avg attendance" value={totals.avgAttendance.toFixed(1)} hint="players per practice" />
+        <Stat label="אימונים שהתקיימו" value={totals.held} hint={`${totals.cancelled} בוטלו`} />
+        <Stat label="ממוצע נוכחות" value={totals.avgAttendance.toFixed(1)} hint="שחקנים לאימון" />
         <Stat
-          label="Coach present"
+          label="נוכחות מאמן"
           value={totals.coachRate === null ? '—' : `${totals.coachRate}%`}
-          hint={`${totals.coachUnreported} not reported`}
+          hint={`${totals.coachUnreported} לא דווחו`}
         />
-        <Stat label="Substitutes used" value={totals.substitutes} hint={`${totals.absences} absences`} />
+        <Stat label="מחליפים" value={totals.substitutes} hint={`${totals.absences} היעדרויות`} />
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs text-slate-500 uppercase">
+          <thead className="bg-slate-50 text-xs text-slate-500">
             <tr>
-              <th className="px-4 py-2.5 font-medium">Team</th>
-              <th className="px-4 py-2.5 text-right font-medium">Held</th>
-              <th className="px-4 py-2.5 text-right font-medium">Avg players</th>
-              <th className="px-4 py-2.5 text-right font-medium">Below {MIN_PLAYERS}</th>
-              <th className="px-4 py-2.5 text-right font-medium">Coach yes / no / ?</th>
-              <th className="px-4 py-2.5 text-right font-medium">Absences</th>
-              <th className="px-4 py-2.5 text-right font-medium">Subs</th>
+              <th className="px-4 py-2.5 text-start font-medium">קבוצה</th>
+              <th className="px-4 py-2.5 text-end font-medium">התקיימו</th>
+              <th className="px-4 py-2.5 text-end font-medium">ממוצע שחקנים</th>
+              <th className="px-4 py-2.5 text-end font-medium">מתחת ל-{MIN_PLAYERS}</th>
+              <th className="px-4 py-2.5 text-end font-medium">מאמן כן / לא / ?</th>
+              <th className="px-4 py-2.5 text-end font-medium">היעדרויות</th>
+              <th className="px-4 py-2.5 text-end font-medium">מחליפים</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map((r) => (
               <tr key={r.team.id}>
-                <td className="px-4 py-2">
+                <td className="px-4 py-2 text-start">
                   <span className="font-medium">{r.team.name}</span>{' '}
-                  <span className={cn('ml-1 rounded-full px-2 py-0.5 text-xs', LEVEL_STYLES[r.team.level])}>
+                  <span className={cn('ms-1 rounded-full px-2 py-0.5 text-xs', LEVEL_STYLES[r.team.level])}>
                     {LEVEL_LABELS[r.team.level]}
                   </span>
                 </td>
-                <td className="px-4 py-2 text-right">
+                <td className="px-4 py-2 text-end">
                   {r.held}
-                  {r.cancelled > 0 && <span className="text-slate-400"> (+{r.cancelled} cancelled)</span>}
+                  {r.cancelled > 0 && <span className="text-slate-400"> (+{r.cancelled} בוטלו)</span>}
                 </td>
-                <td className="px-4 py-2 text-right">{r.held ? r.avgAttendance.toFixed(1) : '—'}</td>
-                <td className={cn('px-4 py-2 text-right', r.belowMin > 0 && 'font-medium text-orange-700')}>{r.belowMin}</td>
-                <td className="px-4 py-2 text-right">
+                <td className="px-4 py-2 text-end">{r.held ? r.avgAttendance.toFixed(1) : '—'}</td>
+                <td className={cn('px-4 py-2 text-end', r.belowMin > 0 && 'font-medium text-orange-700')}>{r.belowMin}</td>
+                <td className="px-4 py-2 text-end">
                   {r.coachYes} / {r.coachNo} /{' '}
                   <span className={cn(r.coachUnreported > 0 && 'font-medium text-orange-700')}>{r.coachUnreported}</span>
                 </td>
-                <td className="px-4 py-2 text-right">{r.absences}</td>
-                <td className="px-4 py-2 text-right">{r.substitutes}</td>
+                <td className="px-4 py-2 text-end">{r.absences}</td>
+                <td className="px-4 py-2 text-end">{r.substitutes}</td>
               </tr>
             ))}
           </tbody>
@@ -206,23 +227,23 @@ export default function Reports({ practices, teams, now }: Props) {
       <section>
         <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold">
           <AlertTriangle className="h-5 w-5 text-orange-600" />
-          Upcoming practices below {MIN_PLAYERS} players
+          אימונים קרובים עם פחות מ-{MIN_PLAYERS} שחקנים
         </h2>
         {upcomingLow.length === 0 ? (
-          <p className="text-sm text-slate-500">None — every upcoming practice has at least {MIN_PLAYERS} players.</p>
+          <p className="text-sm text-slate-500">אין — בכל האימונים הקרובים יש לפחות {MIN_PLAYERS} שחקנים.</p>
         ) : (
           <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
             {upcomingLow.map((p) => (
               <li key={p.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
                 <span>
                   <span className="font-medium">{p.teams?.name ?? LEVEL_LABELS[p.level]}</span>{' '}
-                  <span className="text-slate-500">{format(new Date(p.scheduled_at), 'EEE d MMM, HH:mm')}</span>
+                  <span className="text-slate-500">{formatHe(new Date(p.scheduled_at), 'EEEE, d בMMM, HH:mm')}</span>
                 </span>
                 <span className="flex items-center gap-2">
                   {p.status === 'at_risk' && (
-                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">At risk</span>
+                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">בסיכון</span>
                   )}
-                  <span className="font-medium text-orange-700">
+                  <span dir="ltr" className="font-medium text-orange-700">
                     {attendingCount(p)}/{p.max_players}
                   </span>
                 </span>

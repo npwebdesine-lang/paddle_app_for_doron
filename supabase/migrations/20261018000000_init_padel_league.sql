@@ -188,15 +188,26 @@ create trigger participations_a_guard
 -- Triggers
 -- ---------------------------------------------------------------------------
 
--- Create a profile on sign-up. New users are players with no team until an
--- admin assigns one.
+-- Create a profile on sign-up with the team picked at registration (if it's a
+-- real team). New users are always players; an admin can promote them.
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql security definer set search_path = ''
 as $$
+declare
+  v_full_name text;
+  v_team_id   uuid;
 begin
-  insert into public.profiles (id, full_name)
-  values (new.id, coalesce(new.raw_user_meta_data ->> 'full_name', ''));
+  v_full_name := left(trim(coalesce(new.raw_user_meta_data ->> 'full_name', '')), 120);
+
+  select t.id into v_team_id
+  from public.teams t
+  where t.id::text = nullif(trim(new.raw_user_meta_data ->> 'team_id'), '');
+
+  insert into public.profiles (id, full_name, team_id)
+  values (new.id, v_full_name, v_team_id)
+  on conflict (id) do nothing;
+
   return new;
 end;
 $$;
@@ -382,8 +393,9 @@ grant execute on function public.is_admin() to authenticated;
 grant execute on function public.attending_count(uuid) to authenticated;
 grant execute on function public.admin_list_users() to authenticated;
 
--- Signed-out visitors get nothing.
+-- Signed-out visitors only get the team list (registration dropdown).
 revoke all on public.teams, public.profiles, public.practices, public.participations from anon;
+grant select on public.teams to anon;
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security
@@ -406,6 +418,9 @@ create policy "Admins have full access to practices"
 create policy "Admins have full access to participations"
   on public.participations for all to authenticated
   using ((select public.is_admin())) with check ((select public.is_admin()));
+
+create policy "Teams are readable by visitors for registration"
+  on public.teams for select to anon using (true);
 
 -- Everyone signed in can read the league.
 create policy "Teams are readable by signed-in users"

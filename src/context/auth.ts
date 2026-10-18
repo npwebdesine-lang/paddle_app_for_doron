@@ -7,6 +7,8 @@ export type ProfileWithTeam = Profile & { teams: { id: string; name: string } | 
 export type AuthState = {
   session: Session | null
   profile: ProfileWithTeam | null
+  /** Set when the profile couldn't be loaded after all retries. */
+  profileError: string | null
   loading: boolean
   refreshProfile: () => Promise<void>
 }

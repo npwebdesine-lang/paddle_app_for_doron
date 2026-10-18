@@ -5,7 +5,9 @@ import { useAuth } from '../context/auth'
 import { useNow } from '../hooks/useNow'
 import { useRealtimePractices } from '../hooks/useRealtimePractices'
 import { attendingCount, cn, LEVEL_LABELS, practiceEnd } from '../lib/utils'
+import type { PracticeWithDetails } from '../types/database.types'
 import PracticeCard from './PracticeCard'
+import ProfileStatus from './ProfileStatus'
 
 /** Captains see their team's practices from this many days back, to report coach attendance. */
 const SUMMARY_DAYS = 14
@@ -51,9 +53,10 @@ export default function PlayerDashboard() {
   const { practices, loading, error, live, refetch } = useRealtimePractices(range, 'player-dashboard')
 
   const { myPractices, openSpots, toReport } = useMemo(() => {
-    if (!profile) return { myPractices: [], openSpots: [], toReport: [] }
+    const empty: PracticeWithDetails[] = []
+    if (!profile) return { myPractices: empty, openSpots: empty, toReport: empty }
     const upcoming = practices.filter((p) => practiceEnd(p) > now && p.status !== 'completed')
-    const isMine = (p: (typeof practices)[number]) =>
+    const isMine = (p: PracticeWithDetails) =>
       (profile.team_id !== null && p.team_id === profile.team_id) ||
       p.participations.some((x) => x.profile_id === profile.id)
 
@@ -72,11 +75,11 @@ export default function PlayerDashboard() {
           ? practices
               .filter((p) => p.team_id === profile.team_id && p.status !== 'cancelled' && practiceEnd(p) <= now)
               .reverse()
-          : [],
+          : empty,
     }
   }, [practices, profile, now])
 
-  if (!profile) return null
+  if (!profile) return <ProfileStatus />
 
   if (loading) {
     return (
@@ -86,7 +89,8 @@ export default function PlayerDashboard() {
     )
   }
 
-  const card = (p: (typeof practices)[number]) => (
+  const levelLabel = profile.level ? LEVEL_LABELS[profile.level] : ''
+  const card = (p: PracticeWithDetails) => (
     <PracticeCard key={p.id} practice={p} profile={profile} now={now} onChanged={refetch} />
   )
 
@@ -94,38 +98,38 @@ export default function PlayerDashboard() {
     <div className="space-y-10">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-semibold">Hi {profile.full_name.split(' ')[0] || 'there'}</h1>
+          <h1 className="text-2xl font-semibold">שלום{profile.full_name ? ` ${profile.full_name.split(' ')[0]}` : ''}!</h1>
           <p className="text-sm text-slate-500">
-            {profile.teams ? `${profile.teams.name} · ${profile.level ? LEVEL_LABELS[profile.level] : ''}` : 'No team yet'}
+            {profile.teams ? `${profile.teams.name} · רמה ${levelLabel}` : 'עדיין ללא קבוצה'}
           </p>
         </div>
         <span className={cn('flex items-center gap-1 text-xs font-medium', live ? 'text-emerald-600' : 'text-slate-400')}>
           <Radio className="h-3.5 w-3.5" />
-          {live ? 'Live' : 'Connecting…'}
+          {live ? 'מתעדכן בזמן אמת' : 'מתחבר…'}
         </span>
       </div>
 
       {!profile.team_id && (
         <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
-          You're not assigned to a team yet. A league admin will add you to one soon.
+          עדיין לא שובצת לקבוצה. רכז הליגה ישבץ אותך בקרוב.
         </p>
       )}
       {error && <p className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
 
       <Section
         icon={<CalendarDays className="h-4 w-4" />}
-        title="My Practices"
-        subtitle="Your team's upcoming practices. You're in unless you mark yourself absent."
-        empty="No upcoming practices for your team."
+        title="האימונים שלי"
+        subtitle="האימונים הקרובים של הקבוצה שלך. את/ה רשום/ה אלא אם סימנת שלא תגיע/י."
+        empty="אין אימונים קרובים לקבוצה שלך."
       >
         {myPractices.map(card)}
       </Section>
 
       <Section
         icon={<Sparkles className="h-4 w-4" />}
-        title="Open Spots"
-        subtitle={`Other ${profile.level ? LEVEL_LABELS[profile.level] : ''} practices with free spots. First come, first served.`}
-        empty="No open spots at your level right now."
+        title="מקומות פנויים"
+        subtitle={`אימונים של קבוצות אחרות ברמה ${levelLabel} עם מקומות פנויים. כל הקודם זוכה.`}
+        empty="אין כרגע מקומות פנויים ברמה שלך."
       >
         {openSpots.map(card)}
       </Section>
@@ -133,9 +137,9 @@ export default function PlayerDashboard() {
       {profile.role === 'captain' && (
         <Section
           icon={<ClipboardCheck className="h-4 w-4" />}
-          title="Practice Summaries"
-          subtitle={`Your team's practices from the last ${SUMMARY_DAYS} days. Report whether a coach was there.`}
-          empty="No finished practices to report."
+          title="סיכומי אימונים"
+          subtitle={`אימוני הקבוצה מ-${SUMMARY_DAYS} הימים האחרונים. דווחו אם היה מאמן.`}
+          empty="אין אימונים שהסתיימו לדיווח."
         >
           {toReport.map(card)}
         </Section>

@@ -1,4 +1,3 @@
-import { format } from 'date-fns'
 import {
   AlertTriangle,
   Check,
@@ -15,7 +14,16 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { cn, errorMessage, LEVEL_LABELS, LEVEL_STYLES, MIN_PLAYERS, practiceEnd } from '../lib/utils'
+import {
+  cn,
+  errorMessage,
+  formatHe,
+  LEVEL_LABELS,
+  LEVEL_STYLES,
+  MIN_PLAYERS,
+  practiceEnd,
+  spotsLabel,
+} from '../lib/utils'
 import type { Profile, PracticeWithDetails } from '../types/database.types'
 
 type Props = {
@@ -51,14 +59,21 @@ export default function PracticeCard({ practice, profile, now, onChanged, onEdit
   async function run(key: string, action: () => PromiseLike<{ error: unknown }>) {
     setBusy(key)
     setError(null)
-    const { error } = await action()
-    if (error) setError(errorMessage(error))
-    else onChanged()
-    setBusy(null)
+    try {
+      const { error } = await action()
+      if (error) throw error
+      onChanged()
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setBusy(null)
+    }
   }
 
-  const setStatus = (status: 'attending' | 'absent') =>
-    run(status, () => supabase.from('participations').update({ status }).eq('id', mine!.id))
+  const setStatus = (status: 'attending' | 'absent') => {
+    if (!mine) return
+    return run(status, () => supabase.from('participations').update({ status }).eq('id', mine.id))
+  }
 
   const joinAsSubstitute = () =>
     run('join', () =>
@@ -72,10 +87,12 @@ export default function PracticeCard({ practice, profile, now, onChanged, onEdit
 
   const reportCoach = (hasCoach: boolean) =>
     run(hasCoach ? 'coach-yes' : 'coach-no', () =>
+      // .single() turns "0 rows updated" (blocked by RLS) into a visible error.
       supabase.from('practices').update({ has_coach: hasCoach }).eq('id', practice.id).select('id').single(),
     )
 
   const spinner = <Loader2 className="h-4 w-4 animate-spin" />
+  const playerName = (name: string | undefined) => name || 'שחקן'
 
   return (
     <article
@@ -94,15 +111,15 @@ export default function PracticeCard({ practice, profile, now, onChanged, onEdit
             {practice.teams && <span className="text-xs text-slate-500">{practice.teams.name}</span>}
             {mine?.role_type === 'substitute' && (
               <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
-                You're subbing
+                את/ה בהשלמה
               </span>
             )}
           </div>
           <p className="flex items-center gap-1.5 text-lg font-semibold">
             <Clock className="h-4 w-4 text-slate-400" />
-            {format(start, 'HH:mm')}
+            {formatHe(start, 'HH:mm')}
             <span className="text-sm font-normal text-slate-500">
-              · {format(start, 'EEE d MMM')} · {practice.duration_minutes} min
+              · {formatHe(start, 'EEEE, d בMMM')} · {practice.duration_minutes} דק׳
             </span>
           </p>
           {practice.location && (
@@ -117,7 +134,7 @@ export default function PracticeCard({ practice, profile, now, onChanged, onEdit
           {onEdit && (
             <button
               onClick={() => onEdit(practice)}
-              aria-label="Edit practice"
+              aria-label="עריכת אימון"
               className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
             >
               <Pencil className="h-4 w-4" />
@@ -129,17 +146,15 @@ export default function PracticeCard({ practice, profile, now, onChanged, onEdit
               critical ? 'bg-red-50 text-red-700' : low ? 'bg-orange-50 text-orange-700' : 'bg-emerald-50 text-emerald-700',
             )}
           >
-            <span className="text-xl leading-none font-bold">
+            <span dir="ltr" className="text-xl leading-none font-bold">
               {attending.length}/{practice.max_players}
             </span>
-            <span className="text-[11px] font-medium">players</span>
+            <span className="text-[11px] font-medium">שחקנים</span>
           </div>
         </div>
       </header>
 
-      {cancelled && (
-        <p className="mb-3 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600">Practice cancelled</p>
-      )}
+      {cancelled && <p className="mb-3 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600">האימון בוטל</p>}
       {open && (low || atRisk) && (
         <p
           className={cn(
@@ -148,8 +163,8 @@ export default function PracticeCard({ practice, profile, now, onChanged, onEdit
           )}
         >
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          {atRisk ? 'At risk' : 'Low attendance'}
-          {attending.length < MIN_PLAYERS && ` — ${MIN_PLAYERS - attending.length} more needed`}
+          {atRisk ? 'בסיכון' : 'מעט משתתפים'}
+          {attending.length < MIN_PLAYERS && ` — חסרים עוד ${MIN_PLAYERS - attending.length}`}
         </p>
       )}
 
@@ -163,8 +178,8 @@ export default function PracticeCard({ practice, profile, now, onChanged, onEdit
               p.profile_id === profile.id && 'ring-2 ring-emerald-500',
             )}
           >
-            {p.profiles?.full_name || 'Player'}
-            {p.role_type === 'substitute' && <span className="ml-1 opacity-70">(sub)</span>}
+            {playerName(p.profiles?.full_name)}
+            {p.role_type === 'substitute' && <span className="ms-1 opacity-70">(מחליף)</span>}
           </li>
         ))}
         {open &&
@@ -173,19 +188,19 @@ export default function PracticeCard({ practice, profile, now, onChanged, onEdit
               key={`open-${i}`}
               className="rounded-full border border-dashed border-slate-300 px-2.5 py-1 text-xs text-slate-400"
             >
-              Open spot
+              מקום פנוי
             </li>
           ))}
       </ul>
 
       {absent.length > 0 && (
         <p className="mb-3 text-xs text-slate-400">
-          Absent: {absent.map((p) => p.profiles?.full_name || 'Player').join(', ')}
+          לא מגיעים: {absent.map((p) => playerName(p.profiles?.full_name)).join(', ')}
         </p>
       )}
 
       {ended && practice.has_coach !== null && !canReportCoach && (
-        <p className="mb-3 text-xs text-slate-500">Coach: {practice.has_coach ? 'Yes' : 'No'}</p>
+        <p className="mb-3 text-xs text-slate-500">מאמן: {practice.has_coach ? 'כן' : 'לא'}</p>
       )}
 
       {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
@@ -199,13 +214,13 @@ export default function PracticeCard({ practice, profile, now, onChanged, onEdit
               className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
             >
               {busy === 'absent' ? spinner : <UserMinus className="h-4 w-4" />}
-              Mark Absent
+              לא אגיע
             </button>
           )}
 
           {mine?.status === 'absent' && (
             <>
-              <span className="text-sm text-slate-500">You're marked absent.</span>
+              <span className="text-sm text-slate-500">סימנת שלא תגיע/י.</span>
               {spotsLeft > 0 && (
                 <button
                   disabled={!!busy}
@@ -213,7 +228,7 @@ export default function PracticeCard({ practice, profile, now, onChanged, onEdit
                   className="flex items-center gap-1 text-sm font-medium text-emerald-700 hover:underline disabled:opacity-60"
                 >
                   {busy === 'attending' ? spinner : <Undo2 className="h-3.5 w-3.5" />}
-                  Undo
+                  ביטול
                 </button>
               )}
             </>
@@ -226,13 +241,13 @@ export default function PracticeCard({ practice, profile, now, onChanged, onEdit
               className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
             >
               {busy === 'join' ? spinner : <UserPlus className="h-4 w-4" />}
-              Join as Substitute
+              אני יכול/ה להשלים
             </button>
           )}
 
-          <span className="ml-auto flex items-center gap-1 text-xs text-slate-500">
+          <span className="ms-auto flex items-center gap-1 text-xs text-slate-500">
             <Users className="h-3.5 w-3.5" />
-            {spotsLeft === 0 ? 'Full' : `${spotsLeft} spot${spotsLeft === 1 ? '' : 's'} open`}
+            {spotsLabel(spotsLeft)}
           </span>
         </footer>
       )}
@@ -245,16 +260,16 @@ export default function PracticeCard({ practice, profile, now, onChanged, onEdit
               className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               <ClipboardCheck className="h-4 w-4" />
-              Practice Summary
+              סיכום אימון
               {practice.has_coach === null ? (
-                <span className="ml-1 rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-800">To report</span>
+                <span className="ms-1 rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-800">ממתין לדיווח</span>
               ) : (
-                <span className="ml-1 text-xs text-slate-500">Coach: {practice.has_coach ? 'Yes' : 'No'}</span>
+                <span className="ms-1 text-xs text-slate-500">מאמן: {practice.has_coach ? 'כן' : 'לא'}</span>
               )}
             </button>
           ) : (
             <div>
-              <p className="mb-2 text-sm font-medium text-slate-700">Report Coach — was there a coach?</p>
+              <p className="mb-2 text-sm font-medium text-slate-700">דיווח מאמן — האם היה מאמן באימון?</p>
               <div className="flex gap-2">
                 {[true, false].map((value) => (
                   <button
@@ -277,14 +292,11 @@ export default function PracticeCard({ practice, profile, now, onChanged, onEdit
                     ) : (
                       <X className="h-4 w-4" />
                     )}
-                    {value ? 'Yes' : 'No'}
+                    {value ? 'כן' : 'לא'}
                   </button>
                 ))}
-                <button
-                  onClick={() => setSummaryOpen(false)}
-                  className="ml-auto text-sm text-slate-500 hover:text-slate-700"
-                >
-                  Close
+                <button onClick={() => setSummaryOpen(false)} className="ms-auto text-sm text-slate-500 hover:text-slate-700">
+                  סגירה
                 </button>
               </div>
             </div>
