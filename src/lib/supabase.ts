@@ -4,8 +4,10 @@ import type { Database } from '../types/database.types'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY — fill them in .env.local')
-}
+/** False when the build was made without the Supabase env vars (main.tsx shows a setup message). */
+export const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient<Database>(
+  supabaseUrl || 'http://localhost',
+  supabaseAnonKey || 'missing-anon-key',
+)
