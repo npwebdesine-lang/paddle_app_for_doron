@@ -111,7 +111,7 @@ export default function PracticeCard({ practice, profile, now, onChanged, onEdit
             {practice.teams && <span className="text-xs text-slate-500">{practice.teams.name}</span>}
             {mine?.role_type === 'substitute' && (
               <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
-                את/ה בהשלמה
+                משחק/ת כמחליף
               </span>
             )}
           </div>
@@ -241,7 +241,7 @@ export default function PracticeCard({ practice, profile, now, onChanged, onEdit
               className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
             >
               {busy === 'join' ? spinner : <UserPlus className="h-4 w-4" />}
-              אני יכול/ה להשלים
+              הצטרף כמחליף
             </button>
           )}
 

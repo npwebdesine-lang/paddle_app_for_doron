@@ -6,16 +6,21 @@ import { AuthContext, type ProfileWithTeam } from './auth'
 
 type ProfileResult = { profile: ProfileWithTeam | null; error: string | null }
 
+/** Right after sign-up, retry a missing profile this many times, this far apart. */
+const PROFILE_RETRIES = 3
+const PROFILE_RETRY_MS = 500
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
- * Loads the user's profile, retrying with backoff. Right after sign-up the
- * profile row is created by a database trigger, so the first read can race it.
+ * Loads the user's profile: one attempt plus up to `retries` more, 500ms apart.
+ * With email confirmation disabled, sign-up signs the user in immediately —
+ * often before the database trigger has created the profile row.
  */
-async function fetchProfile(userId: string, attempts: number): Promise<ProfileResult> {
+async function fetchProfile(userId: string, retries: number): Promise<ProfileResult> {
   let lastError: string | null = null
-  for (let i = 0; i < attempts; i++) {
-    if (i > 0) await sleep(400 * i)
+  for (let i = 0; i <= retries; i++) {
+    if (i > 0) await sleep(PROFILE_RETRY_MS)
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -42,7 +47,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   /** Latest requested user id — results for any other user are stale and dropped. */
   const latestUser = useRef<string | null>(null)
 
-  const syncProfile = useCallback(async (userId: string | undefined, attempts: number, force = false) => {
+  const syncProfile = useCallback(async (userId: string | undefined, retries: number, force = false) => {
     latestUser.current = userId ?? null
     if (!userId) {
       loadedFor.current = null
@@ -57,7 +62,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     setLoading(true)
-    const result = await fetchProfile(userId, attempts)
+    const result = await fetchProfile(userId, retries)
     if (latestUser.current !== userId) return
 
     loadedFor.current = result.profile ? userId : null
@@ -75,7 +80,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         if (!active) return
         if (error) setProfileError(errorMessage(error))
         setSession(data.session)
-        return syncProfile(data.session?.user.id, 2)
+        return syncProfile(data.session?.user.id, 1)
       })
       .catch((err) => {
         if (!active) return
@@ -87,9 +92,9 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       setSession(next)
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
         // Deferred: supabase-js warns against awaiting other calls inside this callback.
-        // SIGNED_IN gets extra retries — right after sign-up the profile trigger may lag.
+        // SIGNED_IN retries a missing profile — right after sign-up the trigger may lag.
         setTimeout(() => {
-          syncProfile(next?.user.id, 5, event === 'USER_UPDATED').catch((err) => {
+          syncProfile(next?.user.id, PROFILE_RETRIES, event === 'USER_UPDATED').catch((err) => {
             setProfileError(errorMessage(err))
             setLoading(false)
           })
@@ -104,7 +109,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   }, [syncProfile])
 
   const refreshProfile = useCallback(
-    () => syncProfile(session?.user.id, 3, true),
+    () => syncProfile(session?.user.id, PROFILE_RETRIES, true),
     [syncProfile, session?.user.id],
   )
 

@@ -4,8 +4,10 @@ import { supabase } from '../lib/supabase'
 import { errorMessage, inputClass, LEVEL_LABELS } from '../lib/utils'
 import type { Team } from '../types/database.types'
 
-async function fetchTeams(): Promise<Team[]> {
-  const { data, error } = await supabase.from('teams').select('*').order('level').order('name')
+type TeamOption = Pick<Team, 'id' | 'name' | 'level'>
+
+async function fetchTeams(): Promise<TeamOption[]> {
+  const { data, error } = await supabase.from('teams').select('id, name, level').order('level').order('name')
   if (error) throw error
   return data ?? []
 }
@@ -16,11 +18,10 @@ export default function Auth() {
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [teamId, setTeamId] = useState('')
-  const [teams, setTeams] = useState<Team[]>([])
+  const [teams, setTeams] = useState<TeamOption[]>([])
   const [teamsError, setTeamsError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -40,16 +41,21 @@ export default function Auth() {
     e.preventDefault()
     setBusy(true)
     setError(null)
-    setNotice(null)
     try {
       if (registering) {
+        // Email confirmation is disabled, so sign-up signs the user straight in;
+        // AuthProvider then waits for the profile row the DB trigger creates.
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
           options: { data: { full_name: fullName.trim(), team_id: teamId || null } },
         })
         if (error) throw error
-        if (!data.session) setNotice('שלחנו לך אימייל לאימות החשבון. אחרי האימות אפשר להתחבר.')
+        if (!data.session) {
+          // Fallback if no session came back: sign in explicitly.
+          const { error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+          if (signInError) throw signInError
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
         if (error) throw error
@@ -133,7 +139,6 @@ export default function Auth() {
           </label>
 
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-          {notice && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</p>}
 
           <button
             type="submit"
@@ -157,7 +162,6 @@ export default function Auth() {
               onClick={() => {
                 setRegistering(!registering)
                 setError(null)
-                setNotice(null)
               }}
               className="font-medium text-emerald-700 hover:underline"
             >
